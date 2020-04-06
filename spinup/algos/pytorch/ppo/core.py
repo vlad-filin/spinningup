@@ -133,3 +133,13 @@ class MLPActorCritic(nn.Module):
 
     def act(self, obs):
         return self.step(obs)[0]
+
+# ToDo: add MLPForwardDynamics() class
+
+class IntrMotivation():
+    def __init__(self):
+        pass
+    def loss(self, o, next_o, a):
+        pass
+    def reward(self, o, next_o, a):
+        pass
