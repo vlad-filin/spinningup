@@ -30,14 +30,14 @@ def discount_cumsum(x, discount):
     """
     magic from rllab for computing discounted cumulative sums of vectors.
 
-    input: 
-        vector x, 
-        [x0, 
-         x1, 
+    input:
+        vector x,
+        [x0,
+         x1,
          x2]
 
     output:
-        [x0 + discount * x1 + discount^2 * x2,  
+        [x0 + discount * x1 + discount^2 * x2,
          x1 + discount * x2,
          x2]
     """
@@ -53,7 +53,7 @@ class Actor(nn.Module):
         raise NotImplementedError
 
     def forward(self, obs, act=None):
-        # Produce action distributions for given observations, and 
+        # Produce action distributions for given observations, and
         # optionally compute the log likelihood of given actions under
         # those distributions.
         pi = self._distribution(obs)
@@ -64,7 +64,7 @@ class Actor(nn.Module):
 
 
 class MLPCategoricalActor(Actor):
-    
+
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
         self.logits_net = mlp([obs_dim] + list(hidden_sizes) + [act_dim], activation)
@@ -101,15 +101,13 @@ class MLPCritic(nn.Module):
         self.v_net = mlp([obs_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs):
-        return torch.squeeze(self.v_net(obs), -1) # Critical to ensure v has right shape.
-
+        return torch.squeeze(self.v_net(obs), -1)  # Critical to ensure v has right shape.
 
 
 class MLPActorCritic(nn.Module):
 
-
-    def __init__(self, observation_space, action_space, 
-                 hidden_sizes=(64,64), activation=nn.Tanh):
+    def __init__(self, observation_space, action_space,
+                 hidden_sizes=(64, 64), activation=nn.Tanh):
         super().__init__()
 
         obs_dim = observation_space.shape[0]
@@ -121,7 +119,7 @@ class MLPActorCritic(nn.Module):
             self.pi = MLPCategoricalActor(obs_dim, action_space.n, hidden_sizes, activation)
 
         # build value function
-        self.v  = MLPCritic(obs_dim, hidden_sizes, activation)
+        self.v = MLPCritic(obs_dim, hidden_sizes, activation)
 
     def step(self, obs):
         with torch.no_grad():
@@ -134,12 +132,42 @@ class MLPActorCritic(nn.Module):
     def act(self, obs):
         return self.step(obs)[0]
 
-# ToDo: add MLPForwardDynamics() class
 
-class IntrMotivation():
+class RND(nn.Module):
+    def __init__(self, obs_dim, hidden_sizes, activation):
+        super().__init__()
+        self.target_network = mlp([obs_dim] + list(hidden_sizes), activation)
+        for p in self.target_network.parameters():
+            p.requires_grad = False
+        self.predictor_network = mlp([obs_dim] + list(hidden_sizes), activation)
+        for p in self.modules():
+            if isinstance(p, nn.Linear):
+                nn.init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
+
+    def loss(self, o):
+        return ((self.target_network(o) - self.predictor_network(o))**2).mean()
+
+    def reward(self, o):
+        with torch.no_grad():
+            return self.loss(o).detach().item()
+
+
+class running_estimator():
     def __init__(self):
-        pass
-    def loss(self, o, next_o, a):
-        pass
-    def reward(self, o, next_o, a):
-        pass
+        '''
+        Welford's online algorithm
+        '''
+
+        self.iter = 0
+        self.mean = 0
+        self.M = 0  # sum of squares of differences from the current mean
+
+    def update(self, x: float):
+        self.iter += 1
+        d = x - self.mean
+        self.mean += d / self.iter
+        self.M += d * (x - self.mean)
+
+    def get_std(self):
+        return (self.M / self.iter) ** 0.5
