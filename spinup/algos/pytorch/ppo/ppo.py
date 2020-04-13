@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from torch.optim import Adam
 import gym
+from gym.spaces import Box, Discrete
 import time
 import spinup.algos.pytorch.ppo.core as core
 from spinup.utils.logx import EpochLogger
@@ -21,13 +22,16 @@ class PPOBuffer:
         self.act_buf = np.zeros(core.combined_shape(size, act_dim), dtype=np.float32)
         self.adv_buf = np.zeros(size, dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
-        self.ret_buf = np.zeros(size, dtype=np.float32)
-        self.val_buf = np.zeros(size, dtype=np.float32)
+        self.intr_rew_buf = np.zeros(size, dtype=np.float32)
+        self.ret_extr_buf = np.zeros(size, dtype=np.float32)
+        self.ret_intr_buf = np.zeros(size, dtype=np.float32)
+        self.val_extr_buf = np.zeros(size, dtype=np.float32)
+        self.val_intr_buf = np.zeros(size, dtype=np.float32)
         self.logp_buf = np.zeros(size, dtype=np.float32)
         self.gamma, self.lam = gamma, lam
         self.ptr, self.path_start_idx, self.max_size = 0, 0, size
 
-    def store(self, obs, act, rew, val, logp):
+    def store(self, obs, act, rew, intr_rew, val_extr, val_intr, logp):
         """
         Append one timestep of agent-environment interaction to the buffer.
         """
@@ -35,11 +39,13 @@ class PPOBuffer:
         self.obs_buf[self.ptr] = obs
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew
-        self.val_buf[self.ptr] = val
+        self.intr_rew_buf[self.ptr] = intr_rew
+        self.val_extr_buf[self.ptr] = val_extr
+        self.val_intr_buf[self.ptr] = val_intr
         self.logp_buf[self.ptr] = logp
         self.ptr += 1
 
-    def finish_path(self, last_val=0):
+    def finish_path(self, last_val_extr=0, last_val_intr=0):
         """
         Call this at the end of a trajectory, or when one gets cut off
         by an epoch ending. This looks back in the buffer to where the
@@ -54,17 +60,19 @@ class PPOBuffer:
         This allows us to bootstrap the reward-to-go calculation to account
         for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
         """
-        # if one_head: r = r_extr + alpha * r_intr else calc_adv(r_intr)
         path_slice = slice(self.path_start_idx, self.ptr)
-        rews = np.append(self.rew_buf[path_slice], last_val)
-        vals = np.append(self.val_buf[path_slice], last_val)
+        rews_extr = np.append(self.rew_buf[path_slice], last_val_extr) # extrinsic rewards
+        rews_intr = np.append(self.intr_rew_buf[path_slice], last_val_intr) # intrinsic rewards
+        rews = np.append(self.rew_buf[path_slice] + self.intr_rew_buf[path_slice], last_val_intr + last_val_extr)  #  separate V-functions for extr and intr Reward 
+        vals = np.append(self.val_extr_buf[path_slice] + self.val_intr_buf[path_slice], last_val_intr + last_val_extr) # V-function values for GAE-Lambda advantage 
         
         # the next two lines implement GAE-Lambda advantage calculation
         deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
         self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
         
-        # the next line computes rewards-to-go, to be targets for the value function
-        self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
+        # the next two lines compute rewards-to-go, to be targets for the value functions
+        self.ret_extr_buf[path_slice] = core.discount_cumsum(rews_extr, self.gamma)[:-1]
+        self.ret_intr_buf[path_slice] = core.discount_cumsum(rews_intr, self.gamma)[:-1]
         
         self.path_start_idx = self.ptr
 
@@ -79,15 +87,15 @@ class PPOBuffer:
         # the next two lines implement the advantage normalization trick
         adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
         self.adv_buf = (self.adv_buf - adv_mean) / adv_std
-        data = dict(obs=self.obs_buf, act=self.act_buf, ret=self.ret_buf,
-                    adv=self.adv_buf, logp=self.logp_buf)
+        data = dict(obs=self.obs_buf, act=self.act_buf, ret_extr=self.ret_extr_buf,
+                    ret_intr=self.ret_intr_buf, adv=self.adv_buf, logp=self.logp_buf)
         return {k: torch.as_tensor(v, dtype=torch.float32) for k,v in data.items()}
 
 
-# ToDo: add forward_dynamics parameter
-def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0, 
+def ppo(env_fn, actor_critic=core.MLPActorCritic2V, ac_kwargs=dict(), 
+        intr_rew_model=core.InverseDynamic, intr_rew_model_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
-        vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lam=0.97, max_ep_len=1000,
+        vf_lr=1e-3, intr_rew_lr=5e-4, train_pi_iters=80, train_v_iters=80, train_intr_rew_iters=80, lam=0.97, max_ep_len=1000,
         target_kl=0.01, logger_kwargs=dict(), save_freq=10):
     """
     Proximal Policy Optimization (by clipping), 
@@ -211,15 +219,17 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
     # Create actor-critic module
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
-
-    #ToDo create forward_dynamics module
+    intr_rew_model = intr_rew_model(env.observation_space, env.action_space, **intr_rew_model_kwargs)
 
     # Sync params across processes
     sync_params(ac)
+    sync_params(intr_rew_model)
 
     # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.v])
-    logger.log('\nNumber of parameters: \t pi: %d, \t v: %d\n'%var_counts)
+    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.v_extr, ac.v_intr])
+    var_counts_intr = core.count_vars(intr_rew_model)
+    logger.log('\nNumber of parameters: \t pi: %d, \t v_extr: %d, \t v_intr: %d \n' % var_counts)
+    logger.log('\nNumber of parameters: \t Intrinsic Motivation Model: %d' % var_counts_intr)
 
     # Set up experience buffer
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
@@ -245,28 +255,48 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         return loss_pi, pi_info
 
     # Set up function for computing value loss
-    def compute_loss_v(data):
-        obs, ret = data['obs'], data['ret']
-        return ((ac.v(obs) - ret)**2).mean()
+    def compute_loss_v_extr(data):
+        obs, ret_extr = data['obs'], data['ret_extr']
+        return ((ac.v_extr(obs) - ret_extr)**2).mean()
+    
+    def compute_loss_v_intr(data):
+        obs, ret_intr = data['obs'], data['ret_intr']
+        return ((ac.v_intr(obs) - ret_intr)**2).mean()
+    
+    # Set up function for computing intrinsic reward loss
+    def compute_loss_intr(data):
+        o_buf = data['obs'][:-1, ...]
+        next_o_buf = data['obs'][1:, ...]
+        a_buf = data['act'][:-1, ...]
+        return intr_rew_model.loss(o_buf, next_o_buf, a_buf)
 
     # Set up optimizers for policy and value function
     pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
-    vf_optimizer = Adam(ac.v.parameters(), lr=vf_lr)
+    v_extr_optimizer = Adam(ac.v_extr.parameters(), lr=vf_lr)
+    v_intr_optimizer = Adam(ac.v_intr.parameters(), lr=vf_lr)
+    intr_rew_optimizer = Adam(intr_rew_model.parameters(), lr=intr_rew_lr)
 
     # Set up model saving
     logger.setup_pytorch_saver(ac)
-
-    #ToDo add forwardDynamics loss
+    #logger.setup_pytorch_saver(intr_rew_model)
 
     def update():
         data = buf.get()
 
         pi_l_old, pi_info_old = compute_loss_pi(data)
         pi_l_old = pi_l_old.item()
-        v_l_old = compute_loss_v(data).item()
-        # ToDo add train loop for intr
-        # compute_intr_loss(data, type) ...
-
+        v_extr_l_old = compute_loss_v_extr(data).item()
+        v_intr_l_old = compute_loss_v_intr(data).item()
+        intr_rew_l_old = compute_loss_intr(data).item()
+        
+        #Train intrinsic curiosity model
+        for i in range(train_intr_rew_iters):
+            intr_rew_optimizer.zero_grad()
+            loss_intr_rew = compute_loss_intr(data)
+            loss_intr_rew.backward()
+            mpi_avg_grads(intr_rew_model)    # average grads across MPI processes
+            intr_rew_optimizer.step()
+        
         # Train policy with multiple steps of gradient descent
         for i in range(train_pi_iters):
             pi_optimizer.zero_grad()
@@ -281,38 +311,52 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
         logger.store(StopIter=i)
 
-        # Value function learning
+        # Value functions learning
         for i in range(train_v_iters):
-            vf_optimizer.zero_grad()
-            loss_v = compute_loss_v(data)
-            loss_v.backward()
-            mpi_avg_grads(ac.v)    # average grads across MPI processes
-            vf_optimizer.step()
+            v_extr_optimizer.zero_grad()
+            loss_v_extr = compute_loss_v_extr(data)
+            loss_v_extr.backward()
+            mpi_avg_grads(ac.v_extr)    # average grads across MPI processes
+            v_extr_optimizer.step()
+            
+        for i in range(train_v_iters):
+            v_intr_optimizer.zero_grad()
+            loss_v_intr = compute_loss_v_intr(data)
+            loss_v_intr.backward()
+            mpi_avg_grads(ac.v_intr)    # average grads across MPI processes
+            v_intr_optimizer.step()
+
 
         # Log changes from update
         kl, ent, cf = pi_info['kl'], pi_info_old['ent'], pi_info['cf']
-        logger.store(LossPi=pi_l_old, LossV=v_l_old,
-                     KL=kl, Entropy=ent, ClipFrac=cf,
+        logger.store(LossPi=pi_l_old, LossVExtr=v_extr_l_old, LossVIntr=v_intr_l_old,
+                     LossIntrRew=intr_rew_l_old, KL=kl, Entropy=ent, ClipFrac=cf,
                      DeltaLossPi=(loss_pi.item() - pi_l_old),
-                     DeltaLossV=(loss_v.item() - v_l_old))
+                     DeltaLossIntrRew=(loss_intr_rew.item() - intr_rew_l_old),
+                     DeltaLossVExtr=(loss_v_extr.item() - v_extr_l_old), 
+                     DeltaLossVIntr=(loss_v_intr.item() - v_intr_l_old))
 
     # Prepare for interaction with environment
     start_time = time.time()
-    o, ep_ret, ep_len = env.reset(), 0, 0
+    o, ep_ret, ep_intr_rew, ep_len = env.reset(), 0, 0, 0
 
     # Main loop: collect experience in env and update/log each epoch
     for epoch in range(epochs):
         for t in range(local_steps_per_epoch):
-            a, v, logp = ac.step(torch.as_tensor(o, dtype=torch.float32))
+            a, v_extr, v_intr, logp = ac.step(torch.as_tensor(o, dtype=torch.float32))
 
             next_o, r, d, _ = env.step(a)
-            # ToDo calc intr motivation -> buf
+            intr_rew = intr_rew_model.reward(torch.as_tensor(o, dtype=torch.float32).unsqueeze(0),
+                                             torch.as_tensor(next_o, dtype=torch.float32).unsqueeze(0),
+                                             torch.as_tensor(a, dtype=torch.float32).unsqueeze(0))
+            ep_intr_rew += intr_rew
             ep_ret += r
             ep_len += 1
 
             # save and log
-            buf.store(o, a, r, v, logp)
-            logger.store(VVals=v)
+            buf.store(o, a, r, intr_rew, v_extr, v_intr, logp)
+            logger.store(VValsExtr=v_extr)
+            logger.store(VValsIntr=v_intr)
             
             # Update obs (critical!)
             o = next_o
@@ -325,15 +369,14 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
                 if epoch_ended and not(terminal):
                     print('Warning: trajectory cut off by epoch at %d steps.'%ep_len, flush=True)
                 # if trajectory didn't reach terminal state, bootstrap value target
-                if timeout or epoch_ended:
-                    _, v, _ = ac.step(torch.as_tensor(o, dtype=torch.float32))
-                else:
-                    v = 0
-                buf.finish_path(v)
+                _, v_extr, v_intr, _ = ac.step(torch.as_tensor(o, dtype=torch.float32))
+                if not(timeout or epoch_ended):
+                    v_extr = 0
+                buf.finish_path(v_intr, v_extr)
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
-                    logger.store(EpRet=ep_ret, EpLen=ep_len)
-                o, ep_ret, ep_len = env.reset(), 0, 0
+                    logger.store(EpRet=ep_ret, EpIntrRew=ep_intr_rew, EpLen=ep_len)
+                o, ep_ret, ep_intr_rew, ep_len = env.reset(), 0, 0, 0
 
 
         # Save model
@@ -347,12 +390,18 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         logger.log_tabular('Epoch', epoch)
         logger.log_tabular('EpRet', with_min_and_max=True)
         logger.log_tabular('EpLen', average_only=True)
-        logger.log_tabular('VVals', with_min_and_max=True)
+        logger.log_tabular('EpIntrRew', average_only=True)
+        logger.log_tabular('VValsExtr', with_min_and_max=True)
+        logger.log_tabular('VValsIntr', with_min_and_max=True)
         logger.log_tabular('TotalEnvInteracts', (epoch+1)*steps_per_epoch)
         logger.log_tabular('LossPi', average_only=True)
-        logger.log_tabular('LossV', average_only=True)
+        logger.log_tabular('LossVExtr', average_only=True)
+        logger.log_tabular('LossVIntr', average_only=True)
+        logger.log_tabular('LossIntrRew', average_only=True)
         logger.log_tabular('DeltaLossPi', average_only=True)
-        logger.log_tabular('DeltaLossV', average_only=True)
+        logger.log_tabular('DeltaLossVExtr', average_only=True)
+        logger.log_tabular('DeltaLossVIntr', average_only=True)
+        logger.log_tabular('DeltaLossIntrRew', average_only=True)
         logger.log_tabular('Entropy', average_only=True)
         logger.log_tabular('KL', average_only=True)
         logger.log_tabular('ClipFrac', average_only=True)
@@ -366,6 +415,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='HalfCheetah-v2')
     parser.add_argument('--hid', type=int, default=64)
+    #parser.add_argument('--hid', type=int, default=64)
     parser.add_argument('--l', type=int, default=2)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--seed', '-s', type=int, default=0)
@@ -381,6 +431,6 @@ if __name__ == '__main__':
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed)
 
     ppo(lambda : gym.make(args.env), actor_critic=core.MLPActorCritic,
-        ac_kwargs=dict(hidden_sizes=[args.hid]*args.l), gamma=args.gamma, 
+        ac_kwargs=dict(hidden_sizes=[args.hid]*args.l), intr_rew_model=core.InverseDynamic, intr_rew_model_kwargs=dict(hidden_sizes=[args.hid]*args.l), gamma=args.gamma, 
         seed=args.seed, steps_per_epoch=args.steps, epochs=args.epochs,
         logger_kwargs=logger_kwargs)

@@ -107,7 +107,6 @@ class MLPCritic(nn.Module):
 
 class MLPActorCritic(nn.Module):
 
-
     def __init__(self, observation_space, action_space, 
                  hidden_sizes=(64,64), activation=nn.Tanh):
         super().__init__()
@@ -133,13 +132,80 @@ class MLPActorCritic(nn.Module):
 
     def act(self, obs):
         return self.step(obs)[0]
+    
+class MLPActorCritic2V(nn.Module):
+
+    def __init__(self, observation_space, action_space, 
+                 hidden_sizes=(64,64), activation=nn.Tanh):
+        super().__init__()
+
+        obs_dim = observation_space.shape[0]
+
+        # policy builder depends on action space
+        if isinstance(action_space, Box):
+            self.pi = MLPGaussianActor(obs_dim, action_space.shape[0], hidden_sizes, activation)
+        elif isinstance(action_space, Discrete):
+            self.pi = MLPCategoricalActor(obs_dim, action_space.n, hidden_sizes, activation)
+
+        # build value functions
+        self.v_extr  = MLPCritic(obs_dim, hidden_sizes, activation)
+        self.v_intr  = MLPCritic(obs_dim, hidden_sizes, activation)
+
+    def step(self, obs):
+        with torch.no_grad():
+            pi = self.pi._distribution(obs)
+            a = pi.sample()
+            logp_a = self.pi._log_prob_from_distribution(pi, a)
+            v_extr = self.v_extr(obs)
+            v_intr = self.v_intr(obs)
+        return a.numpy(), v_extr.numpy(), v_intr.numpy(), logp_a.numpy()
+
+    def act(self, obs):
+        return self.step(obs)[0]
+
 
 # ToDo: add MLPForwardDynamics() class
 
-class IntrMotivation():
-    def __init__(self):
-        pass
+class IntrMotivation(nn.Module):
+    
     def loss(self, o, next_o, a):
-        pass
+        raise NotImplementedError
+        
     def reward(self, o, next_o, a):
-        pass
+        raise NotImplementedError
+        
+class InverseDynamic(IntrMotivation):
+    
+    def __init__(self, observation_space, action_space, encoder_output_size,
+                 hidden_sizes_encoder=(64, 64), hidden_sizes_IDM=(64, 64), 
+                 activation_encoder=nn.ELU, activation_IDM=nn.ELU, scaling_factor=0.1):
+        super().__init__()
+        
+        self.action_space = action_space
+        self.scaling_factor = scaling_factor
+        obs_dim = observation_space.shape[0]
+        
+        self.encoder = mlp([obs_dim] + list(hidden_sizes_encoder) + [encoder_output_size], activation_encoder)
+        
+        if isinstance(action_space, Box):
+            self.IDM = mlp(2 * [obs_dim] + list(hidden_sizes_IDM) + [action_space.shape[0]], activation_IDM)
+            self.loss_func = nn.MSELoss()
+        elif isinstance(action_space, Discrete):
+            self.IDM = mlp([2 * encoder_output_size] + list(hidden_sizes_IDM) + [action_space.n], activation_IDM)
+            self.loss_func = nn.CrossEntropyLoss()
+            
+    def loss(self, o, next_o, a):
+        if isinstance(self.action_space, Discrete):
+            a = a.long()
+        phi = torch.cat((self.encoder(o), self.encoder(next_o)), dim=1)
+        a_pred = self.IDM(phi)
+        return self.loss_func(a_pred, a)
+    
+    def reward(self, o, next_o, a):
+        with torch.no_grad():
+            if isinstance(self.action_space, Discrete):
+                a = a.long()
+            phi = torch.cat((self.encoder(o), self.encoder(next_o)), dim=1)
+            a_pred = self.IDM(phi)
+            intr_rew = self.scaling_factor * self.loss_func(a_pred, a)
+        return intr_rew
