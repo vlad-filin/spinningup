@@ -176,9 +176,13 @@ class IntrMotivation(nn.Module):
         
 class InverseDynamic(IntrMotivation):
     
-    def __init__(self, observation_space, action_space, encoder_output_size,
-                 hidden_sizes_encoder=(64, 64), hidden_sizes_IDM=(64, 64), 
-                 activation_encoder=nn.ELU, activation_IDM=nn.ELU, scaling_factor=0.1):
+    def __init__(self, observation_space, action_space,
+                 encoder_output_size,
+                 hidden_sizes_encoder=(64, 64),
+                 hidden_sizes_DM=(64, 64), 
+                 activation_encoder=nn.ELU,
+                 activation_DM=nn.ELU, 
+                 scaling_factor=10):
         super().__init__()
         
         self.action_space = action_space
@@ -188,10 +192,11 @@ class InverseDynamic(IntrMotivation):
         self.encoder = mlp([obs_dim] + list(hidden_sizes_encoder) + [encoder_output_size], activation_encoder)
         
         if isinstance(action_space, Box):
-            self.IDM = mlp(2 * [obs_dim] + list(hidden_sizes_IDM) + [action_space.shape[0]], activation_IDM)
+            self.IDM = mlp(2 * [obs_dim] + list(hidden_sizes_DM) + [action_space.shape[0]], activation_DM)
             self.loss_func = nn.MSELoss()
         elif isinstance(action_space, Discrete):
-            self.IDM = mlp([2 * encoder_output_size] + list(hidden_sizes_IDM) + [action_space.n], activation_IDM)
+            #self.IDM = mlp([2 * obs_dim] + list(hidden_sizes_IDM) + [action_space.n], activation_IDM)
+            self.IDM = mlp([2 * encoder_output_size] + list(hidden_sizes_DM) + [action_space.n], activation_DM)
             self.loss_func = nn.CrossEntropyLoss()
             
     def loss(self, o, next_o, a):
@@ -199,6 +204,7 @@ class InverseDynamic(IntrMotivation):
             a = a.long()
         phi = torch.cat((self.encoder(o), self.encoder(next_o)), dim=1)
         a_pred = self.IDM(phi)
+        #a_pred = self.DM(torch.cat((o, next_o), dim=1))
         return self.loss_func(a_pred, a)
     
     def reward(self, o, next_o, a):
@@ -207,6 +213,71 @@ class InverseDynamic(IntrMotivation):
                 a = a.long()
             phi = torch.cat((self.encoder(o), self.encoder(next_o)), dim=1)
             a_pred = self.IDM(phi)
+            #a_pred = self.DM(torch.cat((o, next_o), dim=1))
             intr_rew = self.scaling_factor * self.loss_func(a_pred, a)
         return intr_rew
+    
+class ForwardDynamic(IntrMotivation):
+    
+    def __init__(self, observation_space, action_space,
+                 encoder_output_size,
+                 hidden_sizes_encoder=(64, 64),
+                 hidden_sizes_DM=(64, 64), 
+                 activation_encoder=nn.ELU,
+                 activation_DM=nn.ELU, 
+                 scaling_factor=10):
+        super().__init__()
+        
+        self.action_space = action_space
+        self.scaling_factor = scaling_factor
+        obs_dim = observation_space.shape[0]
+        
+        self.encoder = mlp([obs_dim] + list(hidden_sizes_encoder) + [encoder_output_size], activation_encoder)
+        
+        if isinstance(action_space, Box):
+            self.FDM = mlp([encoder_output_size +  action_space.shape[0]] + list(hidden_sizes_DM) + [encoder_output_size], activation_DM)
+        elif isinstance(action_space, Discrete):
+            #self.FDM = mlp([2 * obs_dim] + list(hidden_sizes_IDM) + [action_space.n], activation_IDM)
+            self.FDM = mlp([encoder_output_size +  action_space.n] + list(hidden_sizes_DM) + [encoder_output_size], activation_DM)
+
+        self.loss_func = nn.MSELoss()
+            
+    def loss(self, o, next_o, a):
+        #print(a.shape, o.shape, next_o.shape)
+        if isinstance(self.action_space, Discrete):
+            a = nn.functional.one_hot(a.long(), self.action_space.n).float()
+        phi = torch.cat((self.encoder(o), a), dim=1)
+        o_pred = self.FDM(phi)
+        #a_pred = self.DM(torch.cat((o, next_o), dim=1))
+        return self.loss_func(o_pred, self.encoder(next_o))
+    
+    def reward(self, o, next_o, a):
+        #print(a.shape, o.shape, next_o.shape)
+        with torch.no_grad():
+            if isinstance(self.action_space, Discrete):
+                a = nn.functional.one_hot(a.long(), self.action_space.n).float()
+            phi = torch.cat((self.encoder(o), a), dim=1)
+            o_pred = self.FDM(phi)
+            #a_pred = self.DM(torch.cat((o, next_o), dim=1))
+            intr_rew = self.scaling_factor * self.loss_func(o_pred, self.encoder(next_o))
+        return intr_rew
+    
+class running_estimator():
+    def __init__(self):
+        '''
+        Welford's online algorithm
+        '''
+
+        self.iter = 0
+        self.mean = 0
+        self.M = 0  # sum of squares of differences from the current mean
+
+    def update(self, x: float):
+        self.iter += 1
+        d = x - self.mean
+        self.mean += d / self.iter
+        self.M += d * (x - self.mean)
+
+    def get_std(self):
+        return 1 if self.iter < 2  else (self.M / self.iter) ** 0.5
 

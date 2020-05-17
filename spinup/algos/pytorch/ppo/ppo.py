@@ -93,8 +93,12 @@ class PPOBuffer:
 
 
 def ppo(env_fn, actor_critic=core.MLPActorCritic2V, ac_kwargs=dict(), 
-        intr_rew_model=core.InverseDynamic, intr_rew_model_kwargs=dict(), seed=0, 
-        steps_per_epoch=4000, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
+        intr_rew_model=core.ForwardDynamic, intr_rew_model_kwargs=dict(encoder_output_size=8,
+                                                                       hidden_sizes_encoder=(16, 16),
+                                                                       hidden_sizes_DM=(64, 64),
+                                                                       activation_encoder=torch.nn.Tanh,
+                                                                       activation_DM=torch.nn.Tanh, scaling_factor=10),
+        normalize_rewards=True, epochs_warmup=10, seed=0, steps_per_epoch=4000, epochs=300, gamma= 0.99, clip_ratio=0.2, pi_lr=3e-4,
         vf_lr=1e-3, intr_rew_lr=5e-4, train_pi_iters=80, train_v_iters=80, train_intr_rew_iters=80, lam=0.97, max_ep_len=1000,
         target_kl=0.01, logger_kwargs=dict(), save_freq=10):
     """
@@ -220,6 +224,15 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic2V, ac_kwargs=dict(),
     # Create actor-critic module
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     intr_rew_model = intr_rew_model(env.observation_space, env.action_space, **intr_rew_model_kwargs)
+    
+    # Set up optimizers for policy and value function
+    pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
+    v_extr_optimizer = Adam(ac.v_extr.parameters(), lr=vf_lr)
+    v_intr_optimizer = Adam(ac.v_intr.parameters(), lr=vf_lr)
+    intr_rew_optimizer = Adam(intr_rew_model.parameters(), lr=intr_rew_lr)
+    
+    if normalize_rewards is True:
+        reward_std_estimator = core.running_estimator()
 
     # Sync params across processes
     sync_params(ac)
@@ -231,8 +244,28 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic2V, ac_kwargs=dict(),
     logger.log('\nNumber of parameters: \t pi: %d, \t v_extr: %d, \t v_intr: %d \n' % var_counts)
     logger.log('\nNumber of parameters: \t Intrinsic Motivation Model: %d' % var_counts_intr)
 
-    # Set up experience buffer
+
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
+    o = env.reset()
+    
+    if normalize_rewards is True:
+        logger.log("Performing warmup for Intrinsic Motivation")
+        for epoch in range(epochs_warmup):
+            for t in range(local_steps_per_epoch):
+                a, _, _, _ = ac.step(torch.as_tensor(o, dtype=torch.float32))
+
+                next_o, r, d, _ = env.step(a)
+                intr_rew_loss = intr_rew_model.loss(torch.as_tensor(o, dtype=torch.float32).unsqueeze(0),
+                                               torch.as_tensor(next_o, dtype=torch.float32).unsqueeze(0),
+                                               torch.as_tensor(a, dtype=torch.float32).unsqueeze(0))
+                reward_std_estimator.update(intr_rew_loss.item())
+                intr_rew_optimizer.zero_grad()
+
+                intr_rew_loss.backward()
+                mpi_avg_grads(intr_rew_model)    # average grads across MPI processes
+                intr_rew_optimizer.step()
+    
+    # Set up experience buffer
     buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam)
 
     # Set up function for computing PPO policy loss
@@ -269,12 +302,8 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic2V, ac_kwargs=dict(),
         next_o_buf = data['obs'][1:, ...]
         a_buf = data['act'][:-1, ...]
         return intr_rew_model.loss(o_buf, next_o_buf, a_buf)
+    
 
-    # Set up optimizers for policy and value function
-    pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
-    v_extr_optimizer = Adam(ac.v_extr.parameters(), lr=vf_lr)
-    v_intr_optimizer = Adam(ac.v_intr.parameters(), lr=vf_lr)
-    intr_rew_optimizer = Adam(intr_rew_model.parameters(), lr=intr_rew_lr)
 
     # Set up model saving
     logger.setup_pytorch_saver(ac)
@@ -346,9 +375,17 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic2V, ac_kwargs=dict(),
             a, v_extr, v_intr, logp = ac.step(torch.as_tensor(o, dtype=torch.float32))
 
             next_o, r, d, _ = env.step(a)
+            #print(a, v_extr, v_intr, logp, "Initial shape")
             intr_rew = intr_rew_model.reward(torch.as_tensor(o, dtype=torch.float32).unsqueeze(0),
                                              torch.as_tensor(next_o, dtype=torch.float32).unsqueeze(0),
                                              torch.as_tensor(a, dtype=torch.float32).unsqueeze(0))
+            
+            if normalize_rewards is True:
+                #print(intr_rew)
+                reward_std_estimator.update(intr_rew)
+                #print(reward_std_estimator.get_std())
+                intr_rew = intr_rew / reward_std_estimator.get_std()
+            
             ep_intr_rew += intr_rew
             ep_ret += r
             ep_len += 1
