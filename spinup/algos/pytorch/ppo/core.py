@@ -1,11 +1,10 @@
 import numpy as np
 import scipy.signal
-from gym.spaces import Box, Discrete
-
 import torch
 import torch.nn as nn
-from torch.distributions.normal import Normal
+from gym.spaces import Box, Discrete
 from torch.distributions.categorical import Categorical
+from torch.distributions.normal import Normal
 
 
 def combined_shape(length, shape=None):
@@ -16,9 +15,9 @@ def combined_shape(length, shape=None):
 
 def mlp(sizes, activation, output_activation=nn.Identity):
     layers = []
-    for j in range(len(sizes)-1):
-        act = activation if j < len(sizes)-2 else output_activation
-        layers += [nn.Linear(sizes[j], sizes[j+1]), act()]
+    for j in range(len(sizes) - 1):
+        act = activation if j < len(sizes) - 2 else output_activation
+        layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
     return nn.Sequential(*layers)
 
 
@@ -45,7 +44,6 @@ def discount_cumsum(x, discount):
 
 
 class Actor(nn.Module):
-
     def _distribution(self, obs):
         raise NotImplementedError
 
@@ -64,7 +62,6 @@ class Actor(nn.Module):
 
 
 class MLPCategoricalActor(Actor):
-
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
         self.logits_net = mlp([obs_dim] + list(hidden_sizes) + [act_dim], activation)
@@ -78,7 +75,6 @@ class MLPCategoricalActor(Actor):
 
 
 class MLPGaussianActor(Actor):
-
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
         log_std = -0.5 * np.ones(act_dim, dtype=np.float32)
@@ -91,11 +87,10 @@ class MLPGaussianActor(Actor):
         return Normal(mu, std)
 
     def _log_prob_from_distribution(self, pi, act):
-        return pi.log_prob(act).sum(axis=-1)    # Last axis sum needed for Torch Normal distribution
+        return pi.log_prob(act).sum(axis=-1)  # Last axis sum needed for Torch Normal distribution
 
 
 class MLPCritic(nn.Module):
-
     def __init__(self, obs_dim, hidden_sizes, activation):
         super().__init__()
         self.v_net = mlp([obs_dim] + list(hidden_sizes) + [1], activation)
@@ -105,9 +100,7 @@ class MLPCritic(nn.Module):
 
 
 class MLPActorCritic(nn.Module):
-
-    def __init__(self, observation_space, action_space,
-                 hidden_sizes=(64, 64), activation=nn.Tanh):
+    def __init__(self, observation_space, action_space, hidden_sizes=(64, 64), activation=nn.Tanh):
         super().__init__()
 
         obs_dim = observation_space.shape[0]
@@ -134,9 +127,7 @@ class MLPActorCritic(nn.Module):
 
 
 class MLPActorCritic2Heads(nn.Module):
-
-    def __init__(self, observation_space, action_space,
-                 hidden_sizes=(64, 64), activation=nn.Tanh):
+    def __init__(self, observation_space, action_space, hidden_sizes=(64, 64), activation=nn.Tanh):
         super().__init__()
 
         obs_dim = observation_space.shape[0]
@@ -177,18 +168,18 @@ class RND(nn.Module):
                 p.bias.data.zero_()
 
     def loss(self, o):
-        return ((self.target_network(o) - self.predictor_network(o))**2).mean()
+        return ((self.target_network(o) - self.predictor_network(o)) ** 2).mean()
 
     def reward(self, o):
         with torch.no_grad():
             return self.loss(o).detach().item()
 
 
-class running_estimator():
+class running_estimator:
     def __init__(self):
-        '''
+        """
         Welford's online algorithm
-        '''
+        """
 
         self.iter = 0
         self.mean = 0
@@ -202,3 +193,22 @@ class running_estimator():
 
     def get_std(self):
         return (self.M / self.iter) ** 0.5
+
+
+class running_exp_estimator:
+    def __init__(self, alpha=0.05):
+        self.alpha = alpha
+        self.iter = 0
+        self.mean = 0
+        self.var = 0
+
+    def update(self, x: float):
+        if self.iter == 0:
+            self.mean = x
+        else:
+            self.var = (1 - self.alpha) * (self.var + self.alpha * (x - self.mean) ** 2)
+            self.mean = (1 - self.alpha) * self.mean + self.alpha * x
+        self.iter += 1
+
+    def get_std(self):
+        return self.var ** 0.5
