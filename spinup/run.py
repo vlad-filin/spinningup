@@ -1,3 +1,4 @@
+
 import spinup
 from spinup.user_config import DEFAULT_BACKEND
 from spinup.utils.run_utils import ExperimentGrid
@@ -5,14 +6,15 @@ from spinup.utils.serialization_utils import convert_json
 import argparse
 import gym
 import json
-import os, subprocess, sys
+import os
+import subprocess
+import sys
 import os.path as osp
 import string
 import tensorflow as tf
 import torch
 from copy import deepcopy
 from textwrap import dedent
-
 
 # Command line args that will go to ExperimentGrid.run, and must possess unique
 # values (therefore must be treated separately).
@@ -26,10 +28,10 @@ SUBSTITUTIONS = {'env': 'env_name',
                  'dt': 'datestamp'}
 
 # Only some algorithms can be parallelized (have num_cpu > 1):
-MPI_COMPATIBLE_ALGOS = ['vpg', 'trpo', 'ppo']
+MPI_COMPATIBLE_ALGOS = ['vpg', 'trpo', 'ppo_fd_1head', 'ppo', 'ppo_fd_2heads']
 
 # Algo names (used in a few places)
-BASE_ALGO_NAMES = ['vpg', 'trpo', 'ppo', 'ddpg', 'td3', 'sac']
+BASE_ALGO_NAMES = ['vpg', 'trpo', 'ppo', 'ddpg', 'td3', 'sac', 'ppo_fd_1head', 'ppo_fd_2heads']
 
 
 def add_with_backends(algo_list):
@@ -50,7 +52,7 @@ def parse_and_execute_grid_search(cmd, args):
 
     if cmd in BASE_ALGO_NAMES:
         backend = DEFAULT_BACKEND[cmd]
-        print('\n\nUsing default backend (%s) for %s.\n'%(backend, cmd))
+        print('\n\nUsing default backend (%s) for %s.\n' % (backend, cmd))
         cmd = cmd + '_' + backend
 
     algo = eval('spinup.'+cmd)
@@ -87,7 +89,7 @@ def parse_and_execute_grid_search(cmd, args):
     # Make second pass through, to catch flags that have no vals.
     # Assume such flags indicate that a boolean parameter should have
     # value True.
-    for k,v in arg_dict.items():
+    for k, v in arg_dict.items():
         if len(v) == 0:
             v.append(True)
 
@@ -131,7 +133,7 @@ def parse_and_execute_grid_search(cmd, args):
         if k in arg_dict:
             val = arg_dict[k]
             assert len(val) == 1, \
-                friendly_err("You can only provide one value for %s."%k)
+                friendly_err("You can only provide one value for %s." % k)
             run_kwargs[k] = val[0]
             del arg_dict[k]
 
@@ -169,13 +171,12 @@ def parse_and_execute_grid_search(cmd, args):
 
                     https://gym.openai.com/envs/
 
-            """%env_name)
+            """ % env_name)
         assert env_name in valid_envs, err_msg
-
 
     # Construct and execute the experiment grid.
     eg = ExperimentGrid(name=exp_name)
-    for k,v in arg_dict.items():
+    for k, v in arg_dict.items():
         eg.add(k, v, shorthand=given_shorthands.get(k))
     eg.run(algo, **run_kwargs)
 
@@ -215,8 +216,8 @@ if __name__ == '__main__':
         print(help_msg)
 
         # Provide some useful details for algorithm running.
-        subs_list = ['--' + k.ljust(10) + 'for'.ljust(10) + '--' + v \
-                     for k,v in SUBSTITUTIONS.items()]
+        subs_list = ['--' + k.ljust(10) + 'for'.ljust(10) + '--' + v
+                     for k, v in SUBSTITUTIONS.items()]
         str_valid_subs = '\n\t' + '\n\t'.join(subs_list)
         special_info = dedent("""
             FYI: When running an algorithm, any keyword argument to the
@@ -238,7 +239,7 @@ if __name__ == '__main__':
 
     elif cmd in valid_utils:
         # Execute the correct utility file.
-        runfile = osp.join(osp.abspath(osp.dirname(__file__)), 'utils', cmd +'.py')
+        runfile = osp.join(osp.abspath(osp.dirname(__file__)), 'utils', cmd + '.py')
         args = [sys.executable if sys.executable else 'python', runfile] + sys.argv[2:]
         subprocess.check_call(args, env=os.environ)
     else:
