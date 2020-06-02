@@ -10,6 +10,22 @@ from spinup.utils.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg
 from spinup.utils.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs
 
 
+class StickyActionEnv(gym.Wrapper):
+    def __init__(self, env, p=0.25):
+        super(StickyActionEnv, self).__init__(env)
+        self.p = p
+        self.last_action = 0
+
+    def reset(self):
+        self.last_action = 0
+        return self.env.reset()
+
+    def step(self, action):
+        if self.unwrapped.np_random.uniform() < self.p:
+            action = self.last_action
+        self.last_action = action
+        obs, reward, done, info = self.env.step(action)
+        return obs, reward, done, info
 
 class PPOBuffer_2V:
     """
@@ -170,7 +186,7 @@ class PPOBuffer:
         return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in data.items()}
 
 
-def ppo(env_fn, ac_kwargs=dict(), intr_rew_model=core.ForwardDynamic,
+def ppo(env_fn, ac_kwargs=dict(), intr_rew_model="ICM",
         intr_rew_model_kwargs=dict(encoder_output_size=8,
                                    hidden_sizes_encoder=(16, 16),
                                    hidden_sizes_DM=(64, 64),
@@ -295,7 +311,7 @@ def ppo(env_fn, ac_kwargs=dict(), intr_rew_model=core.ForwardDynamic,
     np.random.seed(seed)
 
     # Instantiate environment
-    env = env_fn()
+    env = StickyActionEnv(env_fn(), p=sticky_actions_prob)
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape
 
@@ -304,17 +320,21 @@ def ppo(env_fn, ac_kwargs=dict(), intr_rew_model=core.ForwardDynamic,
         actor_critic = core.MLPActorCritic2V
     else:
         actor_critic = core.MLPActorCritic
-    ac_kwargs["sticky_actions_prob"] = sticky_actions_prob
+        
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     
     #Create Intrinsic Motivation module
     logger.log("Intrinsic Reward Model: {}".format(intr_rew_model))
-    if intr_rew_model == "ForwardDynamic":
+    if intr_rew_model == "FDM":
         intr_rew_model = core.ForwardDynamic
-    elif intr_rew_model == "InverseDynamic":
+    elif intr_rew_model == "IDM":
         intr_rew_model = core.InverseDynamic
     elif intr_rew_model == "ICM":
         intr_rew_model = core.ICM
+    elif intr_rew_model == "FDM_no_enc":
+        intr_rew_model = core.ForwardDynamicNoEnc
+    elif intr_rew_model == "IDM_no_enc":
+        intr_rew_model = core.InverseDynamicNoEnc
     else:
         raise ValueError("Unknown model type")
     intr_rew_model_kwargs["scaling_factor"] = scaling_factor
@@ -350,7 +370,7 @@ def ppo(env_fn, ac_kwargs=dict(), intr_rew_model=core.ForwardDynamic,
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
     o = env.reset()
     
-    if normalize_rewards is True:
+    if epochs_warmup > 0:
         logger.log("Performing warmup for Intrinsic Motivation")
         for epoch in range(epochs_warmup):
             for t in range(local_steps_per_epoch):
@@ -363,11 +383,12 @@ def ppo(env_fn, ac_kwargs=dict(), intr_rew_model=core.ForwardDynamic,
                 intr_rew_loss = intr_rew_model.loss(torch.as_tensor(o, dtype=torch.float32).unsqueeze(0),
                                                torch.as_tensor(next_o, dtype=torch.float32).unsqueeze(0),
                                                torch.as_tensor(a, dtype=torch.float32).unsqueeze(0))
-                reward_std_estimator.update(intr_rew_loss.item())
+                if normalize_rewards is True:
+                    reward_std_estimator.update(intr_rew_loss.item())
                 intr_rew_optimizer.zero_grad()
 
                 intr_rew_loss.backward()
-                mpi_avg_grads(intr_rew_model)    # average grads across MPI processes
+                mpi_avg_grads(intr_rew_model)
                 intr_rew_optimizer.step()
     
     # Set up experience buffer
@@ -438,7 +459,7 @@ def ppo(env_fn, ac_kwargs=dict(), intr_rew_model=core.ForwardDynamic,
             intr_rew_optimizer.zero_grad()
             loss_intr_rew = compute_loss_intr(data)
             loss_intr_rew.backward()
-            mpi_avg_grads(intr_rew_model)    # average grads across MPI processes
+            mpi_avg_grads(intr_rew_model)
             intr_rew_optimizer.step()
         
         # Train policy with multiple steps of gradient descent
@@ -617,7 +638,4 @@ if __name__ == '__main__':
     from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed)
 
-    ppo(lambda : gym.make(args.env), actor_critic=core.MLPActorCritic,
-        ac_kwargs=dict(hidden_sizes=[args.hid]*args.l), intr_rew_model=core.InverseDynamic, intr_rew_model_kwargs=dict(hidden_sizes=[args.hid]*args.l), gamma=args.gamma, 
-        seed=args.seed, steps_per_epoch=args.steps, epochs=args.epochs,
-        logger_kwargs=logger_kwargs)
+    ppo(lambda : gym.make(args.env))
