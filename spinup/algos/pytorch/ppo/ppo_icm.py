@@ -317,7 +317,7 @@ def ppo(env_fn, ac_kwargs=dict(), intr_rew_model="ICM",
 
     # Create actor-critic module
     if two_v_heads is True:
-        actor_critic = core.MLPActorCritic2V
+        actor_critic = core.MLPActorCritic2Heads
     else:
         actor_critic = core.MLPActorCritic
         
