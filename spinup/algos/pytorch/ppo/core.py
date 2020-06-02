@@ -1,12 +1,11 @@
 
 import numpy as np
 import scipy.signal
-from gym.spaces import Box, Discrete
-
 import torch
 import torch.nn as nn
-from torch.distributions.normal import Normal
+from gym.spaces import Box, Discrete
 from torch.distributions.categorical import Categorical
+from torch.distributions.normal import Normal
 
 
 def combined_shape(length, shape=None):
@@ -17,9 +16,9 @@ def combined_shape(length, shape=None):
 
 def mlp(sizes, activation, output_activation=nn.Identity):
     layers = []
-    for j in range(len(sizes)-1):
-        act = activation if j < len(sizes)-2 else output_activation
-        layers += [nn.Linear(sizes[j], sizes[j+1]), act()]
+    for j in range(len(sizes) - 1):
+        act = activation if j < len(sizes) - 2 else output_activation
+        layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
     return nn.Sequential(*layers)
 
 
@@ -46,7 +45,6 @@ def discount_cumsum(x, discount):
 
 
 class Actor(nn.Module):
-
     def _distribution(self, obs):
         raise NotImplementedError
 
@@ -65,7 +63,6 @@ class Actor(nn.Module):
 
 
 class MLPCategoricalActor(Actor):
-
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
         self.logits_net = mlp(
@@ -80,7 +77,6 @@ class MLPCategoricalActor(Actor):
 
 
 class MLPGaussianActor(Actor):
-
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
         log_std = -0.5 * np.ones(act_dim, dtype=np.float32)
@@ -99,7 +95,6 @@ class MLPGaussianActor(Actor):
 
 
 class MLPCritic(nn.Module):
-
     def __init__(self, obs_dim, hidden_sizes, activation):
         super().__init__()
         self.v_net = mlp([obs_dim] + list(hidden_sizes) + [1], activation)
@@ -168,7 +163,6 @@ class MLPActorCritic2Heads(nn.Module):
 
     def act(self, obs):
         return self.step(obs)[0]
-# ToDo: add MLPForwardDynamics() class
 
 
 class IntrMotivation(nn.Module):
@@ -199,8 +193,6 @@ class ForwardDynamics(IntrMotivation):
         self.act_dim = action_space.n
         self.net = mlp([obs_dim + self.act_dim] + list(hidden_sizes) +
                        [obs_dim], activation=activation)
-        # self.mse = nn.MSELoss()
-
     def loss(self, o, next_o, a):
         a_t = torch.as_tensor(a)
         o_t = torch.as_tensor(o, dtype=torch.float32)
@@ -213,3 +205,63 @@ class ForwardDynamics(IntrMotivation):
 
     def reward(self, o, next_o, a):
         return self.scaling_factor / 2 * self.loss(o, next_o, a).detach().numpy()
+
+
+
+class RND(nn.Module):
+    def __init__(self, obs_dim, hidden_sizes, activation):
+        super().__init__()
+        self.target_network = mlp([obs_dim] + list(hidden_sizes), activation)
+        for p in self.target_network.parameters():
+            p.requires_grad = False
+        self.predictor_network = mlp([obs_dim] + list(hidden_sizes), activation)
+        for p in self.modules():
+            if isinstance(p, nn.Linear):
+                nn.init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
+
+    def loss(self, o):
+        return ((self.target_network(o) - self.predictor_network(o)) ** 2).mean()
+
+    def reward(self, o):
+        with torch.no_grad():
+            return self.loss(o).detach().item()
+
+
+class running_estimator:
+    def __init__(self):
+        """
+        Welford's online algorithm
+        """
+
+        self.iter = 0
+        self.mean = 0
+        self.M = 0  # sum of squares of differences from the current mean
+
+    def update(self, x: float):
+        self.iter += 1
+        d = x - self.mean
+        self.mean += d / self.iter
+        self.M += d * (x - self.mean)
+
+    def get_std(self):
+        return (self.M / self.iter) ** 0.5
+
+
+class running_exp_estimator:
+    def __init__(self, alpha=0.05):
+        self.alpha = alpha
+        self.iter = 0
+        self.mean = 0
+        self.var = 0
+
+    def update(self, x: float):
+        if self.iter == 0:
+            self.mean = x
+        else:
+            self.var = (1 - self.alpha) * (self.var + self.alpha * (x - self.mean) ** 2)
+            self.mean = (1 - self.alpha) * self.mean + self.alpha * x
+        self.iter += 1
+
+    def get_std(self):
+        return self.var ** 0.5

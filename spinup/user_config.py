@@ -12,6 +12,7 @@ DEFAULT_BACKEND = {
     'sac': 'pytorch',
     'ppo_fd_1head': 'pytorch',
     'ppo_fd_2heads': 'pytorch',
+    'ppo_rnd': 'pytorch',
 
 }
 
