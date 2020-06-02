@@ -7,6 +7,7 @@ DEFAULT_BACKEND = {
     'vpg': 'pytorch',
     'trpo': 'tf1',
     'ppo': 'pytorch',
+    'ppo_icm': 'pytorch',
     'ddpg': 'pytorch',
     'td3': 'pytorch',
     'sac': 'pytorch',

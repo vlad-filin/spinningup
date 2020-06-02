@@ -31,11 +31,10 @@ SUBSTITUTIONS = {
 }
 
 # Only some algorithms can be parallelized (have num_cpu > 1):
-
-MPI_COMPATIBLE_ALGOS = ["vpg", "trpo", "ppo_fd_1head", "ppo", "ppo_fd_2heads", "ppo_rnd"]
+MPI_COMPATIBLE_ALGOS = ["vpg", "trpo", "ppo_fd_1head", "ppo", "ppo_fd_2heads", "ppo_rnd", "ppo_icm"]
 
 # Algo names (used in a few places)
-BASE_ALGO_NAMES = ["vpg", "trpo", "ppo", "ddpg", "td3", "sac", "ppo_fd_1head", "ppo_fd_2heads", "ppo_rnd"]
+BASE_ALGO_NAMES = ["vpg", "trpo", "ppo", "ddpg", "td3", "sac", "ppo_fd_1head", "ppo_fd_2heads", "ppo_rnd", "ppo_icm"]
 
 
 def add_with_backends(algo_list):
@@ -197,6 +196,7 @@ if __name__ == "__main__":
     For algorithms, it sets up an ExperimentGrid object and uses the
     ExperimentGrid run routine to execute each possible experiment.
     """
+
 
     cmd = sys.argv[1] if len(sys.argv) > 1 else "help"
     valid_algos = add_with_backends(BASE_ALGO_NAMES)
