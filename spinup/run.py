@@ -1,4 +1,3 @@
-
 import argparse
 import json
 import os
@@ -17,6 +16,7 @@ import spinup
 from spinup.user_config import DEFAULT_BACKEND
 from spinup.utils.run_utils import ExperimentGrid
 from spinup.utils.serialization_utils import convert_json
+
 # Command line args that will go to ExperimentGrid.run, and must possess unique
 # values (therefore must be treated separately).
 RUN_KEYS = ["num_cpu", "data_dir", "datestamp"]
@@ -32,10 +32,10 @@ SUBSTITUTIONS = {
 
 # Only some algorithms can be parallelized (have num_cpu > 1):
 
-MPI_COMPATIBLE_ALGOS = ['vpg', 'trpo', 'ppo_fd_1head', 'ppo', 'ppo_fd_2heads', "ppo_rnd"]
+MPI_COMPATIBLE_ALGOS = ["vpg", "trpo", "ppo_fd_1head", "ppo", "ppo_fd_2heads", "ppo_rnd"]
 
 # Algo names (used in a few places)
-BASE_ALGO_NAMES = ['vpg', 'trpo', 'ppo', 'ddpg', 'td3', 'sac', 'ppo_fd_1head', 'ppo_fd_2heads', "ppo_rnd"]
+BASE_ALGO_NAMES = ["vpg", "trpo", "ppo", "ddpg", "td3", "sac", "ppo_fd_1head", "ppo_fd_2heads", "ppo_rnd"]
 
 
 def add_with_backends(algo_list):
@@ -56,9 +56,8 @@ def parse_and_execute_grid_search(cmd, args):
 
     if cmd in BASE_ALGO_NAMES:
         backend = DEFAULT_BACKEND[cmd]
-        print('\n\nUsing default backend (%s) for %s.\n' % (backend, cmd))
-        cmd = cmd + '_' + backend
-
+        print("\n\nUsing default backend (%s) for %s.\n" % (backend, cmd))
+        cmd = cmd + "_" + backend
 
     algo = eval("spinup." + cmd)
 
@@ -136,8 +135,7 @@ def parse_and_execute_grid_search(cmd, args):
     for k in RUN_KEYS:
         if k in arg_dict:
             val = arg_dict[k]
-            assert len(val) == 1, \
-                friendly_err("You can only provide one value for %s." % k)
+            assert len(val) == 1, friendly_err("You can only provide one value for %s." % k)
             run_kwargs[k] = val[0]
             del arg_dict[k]
 
@@ -176,7 +174,9 @@ def parse_and_execute_grid_search(cmd, args):
                     https://gym.openai.com/envs/
 
 
-            """ % env_name)
+            """
+            % env_name
+        )
         assert env_name in valid_envs, err_msg
 
     # Construct and execute the experiment grid.
@@ -225,10 +225,11 @@ if __name__ == "__main__":
         print(help_msg)
 
         # Provide some useful details for algorithm running.
-        subs_list = ['--' + k.ljust(10) + 'for'.ljust(10) + '--' + v
-                     for k, v in SUBSTITUTIONS.items()]
-        str_valid_subs = '\n\t' + '\n\t'.join(subs_list)
-        special_info = dedent("""
+        subs_list = ["--" + k.ljust(10) + "for".ljust(10) + "--" + v for k, v in SUBSTITUTIONS.items()]
+        str_valid_subs = "\n\t" + "\n\t".join(subs_list)
+        special_info = (
+            dedent(
+                """
 
             FYI: When running an algorithm, any keyword argument to the
             algorithm function can be used as a flag, eg
@@ -253,8 +254,8 @@ if __name__ == "__main__":
     elif cmd in valid_utils:
         # Execute the correct utility file.
 
-        runfile = osp.join(osp.abspath(osp.dirname(__file__)), 'utils', cmd + '.py')
-        args = [sys.executable if sys.executable else 'python', runfile] + sys.argv[2:]
+        runfile = osp.join(osp.abspath(osp.dirname(__file__)), "utils", cmd + ".py")
+        args = [sys.executable if sys.executable else "python", runfile] + sys.argv[2:]
         subprocess.check_call(args, env=os.environ)
     else:
         # Assume that the user plans to execute an algorithm. Run custom

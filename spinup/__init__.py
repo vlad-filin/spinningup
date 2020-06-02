@@ -1,9 +1,10 @@
+import tensorflow as tf
 
 from spinup.algos.pytorch.ddpg.ddpg import ddpg as ddpg_pytorch
 from spinup.algos.pytorch.ppo.ppo import ppo as ppo_pytorch
-from spinup.algos.pytorch.ppo.ppo_rnd import ppo as ppo_rnd_pytorch
 from spinup.algos.pytorch.ppo.ppo_fd_1head import ppo as ppo_fd_1head_pytorch
 from spinup.algos.pytorch.ppo.ppo_fd_2heads import ppo as ppo_fd_2heads_pytorch
+from spinup.algos.pytorch.ppo.ppo_rnd import ppo as ppo_rnd_pytorch
 from spinup.algos.pytorch.sac.sac import sac as sac_pytorch
 from spinup.algos.pytorch.td3.td3 import td3 as td3_pytorch
 from spinup.algos.pytorch.trpo.trpo import trpo as trpo_pytorch
