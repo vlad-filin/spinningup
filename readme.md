@@ -1,11 +1,11 @@
 # Проект по курсу [Advanced Topics in Deep Reinforcement learning](http://deeppavlov.ai/rl_course_2020)
 
-## Тема: <<Comparative study of intrinsic motivations (Exploration in RL)>>
+## Тема: Comparative study of intrinsic motivations (Exploration in RL)
 К проекту прилагается отчет в формате pdf: [advanced_rl_course_project_10_2020.pdf](advanced_rl_course_project_10_2020.pdf).
 
 Реализация базовых алгоритмов была заимствована из библиотеки [spinningup](https://github.com/openai/spinningup).
 
-Реализация алгоритмов внутренней мотивации на основе базового алгоритма ppo может быть найдена в папке [ppo](spinup/algos/pytorch/ppo)
+Реализация алгоритмов внутренней мотивации на основе базового алгоритма ppo может быть найдена в папке [ppo](spinup/algos/pytorch/ppo).
 
 Проект выполнили:
 Цыпин Артем,
