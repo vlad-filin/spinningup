@@ -13,7 +13,7 @@ conda create -n spinningup python=3.6
 conda activate spinningup
 sudo apt-get update && sudo apt-get install libopenmpi-dev
 git clone https://github.com/vlad-filin/spinningup_curiousity.git
-cd spinningup
+cd spinningup_curiousity
 pip install -e .
 ```
 
