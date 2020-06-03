@@ -12,7 +12,7 @@
 Шамшиев Мамат,
 Филимонов Владислав.
 
-## Как настроить (используя anaconda)
+## Как настроить (используя anaconda на ubuntu)
 ```
 conda create -n spinningup python=3.6
 conda activate spinningup
