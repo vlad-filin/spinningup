@@ -1,32 +1,35 @@
-**Status:** Maintenance (expect bug fixes and minor updates)
+# Проект по курсу [Advanced Topics in Deep Reinforcement learning](http://deeppavlov.ai/rl_course_2020)
 
-Welcome to Spinning Up in Deep RL! 
-==================================
+## Тема: <<Comparative study of intrinsic motivations (Exploration in RL)>>
+К проекту прилагается отчет в формате pdf: [advanced_rl_course_project_10_2020.pdf](advanced_rl_course_project_10_2020.pdf).
 
-This is an educational resource produced by OpenAI that makes it easier to learn about deep reinforcement learning (deep RL).
+Реализация базовых алгоритмов была заимствована из библиотеки [spinningup](https://github.com/openai/spinningup).
 
-For the unfamiliar: [reinforcement learning](https://en.wikipedia.org/wiki/Reinforcement_learning) (RL) is a machine learning approach for teaching agents how to solve tasks by trial and error. Deep RL refers to the combination of RL with [deep learning](http://ufldl.stanford.edu/tutorial/).
+Реализация алгоритмов внутренней мотивации на основе базового алгоритма ppo может быть найдена в папке [ppo](spinup/algos/pytorch/ppo)
 
-This module contains a variety of helpful resources, including:
+Проект выполнили:
+Цыпин Артем,
+Шамшиев Мамат,
+Филимонов Владислав.
 
-- a short [introduction](https://spinningup.openai.com/en/latest/spinningup/rl_intro.html) to RL terminology, kinds of algorithms, and basic theory,
-- an [essay](https://spinningup.openai.com/en/latest/spinningup/spinningup.html) about how to grow into an RL research role,
-- a [curated list](https://spinningup.openai.com/en/latest/spinningup/keypapers.html) of important papers organized by topic,
-- a well-documented [code repo](https://github.com/openai/spinningup) of short, standalone implementations of key algorithms,
-- and a few [exercises](https://spinningup.openai.com/en/latest/spinningup/exercises.html) to serve as warm-ups.
-
-Get started at [spinningup.openai.com](https://spinningup.openai.com)!
-
-
-Citing Spinning Up
-------------------
-
-If you reference or use Spinning Up in your research, please cite:
-
+## Как настроить (используя anaconda на ubuntu)
 ```
-@article{SpinningUp2018,
-    author = {Achiam, Joshua},
-    title = {{Spinning Up in Deep Reinforcement Learning}},
-    year = {2018}
-}
+conda create -n spinningup python=3.6
+conda activate spinningup
+sudo apt-get update && sudo apt-get install libopenmpi-dev
+git clone https://github.com/vlad-filin/spinningup_curiousity.git
+cd spinningup_curiousity
+pip install -e .
 ```
+
+## Как воспроизвести эксперименты
+
+Полный список команд для воспроизведения может быть найден в конце отчета. Пример команды для повторения первого эксперимента:
+```
+python -m spinup.run ppo_icm --env MountainCar-v0 \
+--exp_name ExpName --intr_rew_model ICM --epochs 500 \
+--normalize_rewards True False --epochs_warmup 0 1 \ 
+--two_v_heads True --scaling_factor 100 --seed 0 10 20 30 40
+```
+
+P.S. в текущий версии модели внутренней мотивации работают только с ppo и средой MountainCar-v0

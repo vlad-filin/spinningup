@@ -12,6 +12,7 @@ DIV_LINE_WIDTH = 50
 exp_idx = 0
 units = dict()
 
+
 def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition1", smooth=1, **kwargs):
     if smooth > 1:
         """
@@ -24,7 +25,7 @@ def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition1",
         for datum in data:
             x = np.asarray(datum[value])
             z = np.ones(len(x))
-            smoothed_x = np.convolve(x,y,'same') / np.convolve(z,y,'same')
+            smoothed_x = np.convolve(x, y, 'same') / np.convolve(z, y, 'same')
             datum[value] = smoothed_x
 
     if isinstance(data, list):
@@ -40,7 +41,7 @@ def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition1",
     Changes the colorscheme and the default legend style, though.
     """
     plt.legend(loc='best').set_draggable(True)
-    #plt.legend(loc='upper center', ncol=3, handlelength=1,
+    # plt.legend(loc='upper center', ncol=3, handlelength=1,
     #           borderaxespad=0., prop={'size': 13})
 
     """
@@ -54,9 +55,10 @@ def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition1",
     xscale = np.max(np.asarray(data[xaxis])) > 5e3
     if xscale:
         # Just some formatting niceness: x-axis scale in scientific notation if max x is large
-        plt.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+        plt.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
 
     plt.tight_layout(pad=0.5)
+
 
 def get_datasets(logdir, condition=None):
     """
@@ -72,7 +74,7 @@ def get_datasets(logdir, condition=None):
         if 'progress.txt' in files:
             exp_name = None
             try:
-                config_path = open(os.path.join(root,'config.json'))
+                config_path = open(os.path.join(root, 'config.json'))
                 config = json.load(config_path)
                 if 'exp_name' in config:
                     exp_name = config['exp_name']
@@ -87,11 +89,17 @@ def get_datasets(logdir, condition=None):
             units[condition1] += 1
 
             try:
-                exp_data = pd.read_table(os.path.join(root,'progress.txt'))
+                exp_data = pd.read_table(os.path.join(root, 'progress.txt'))
             except:
-                print('Could not read from %s'%os.path.join(root,'progress.txt'))
+                print('Could not read from %s' % os.path.join(root, 'progress.txt'))
                 continue
-            performance = 'AverageTestEpRet' if 'AverageTestEpRet' in exp_data else 'AverageEpRet'
+                
+            if 'AverageTestEpRet' in exp_data:
+                performance = 'AverageTestEpRet'
+            elif 'AverageEpRet_extr' in exp_data:
+                performance = 'AverageEpRet_extr'
+            else:
+                performance = 'AverageEpRet'
             exp_data.insert(len(exp_data.columns),'Unit',unit)
             exp_data.insert(len(exp_data.columns),'Condition1',condition1)
             exp_data.insert(len(exp_data.columns),'Condition2',condition2)
@@ -111,13 +119,13 @@ def get_all_datasets(all_logdirs, legend=None, select=None, exclude=None):
     """
     logdirs = []
     for logdir in all_logdirs:
-        if osp.isdir(logdir) and logdir[-1]==os.sep:
+        if osp.isdir(logdir) and logdir[-1] == os.sep:
             logdirs += [logdir]
         else:
             basedir = osp.dirname(logdir)
-            fulldir = lambda x : osp.join(basedir, x)
+            def fulldir(x): return osp.join(basedir, x)
             prefix = logdir.split(os.sep)[-1]
-            listdir= os.listdir(basedir)
+            listdir = os.listdir(basedir)
             logdirs += sorted([fulldir(x) for x in listdir if prefix in x])
 
     """
@@ -151,7 +159,7 @@ def get_all_datasets(all_logdirs, legend=None, select=None, exclude=None):
     return data
 
 
-def make_plots(all_logdirs, legend=None, xaxis=None, values=None, count=False,  
+def make_plots(all_logdirs, legend=None, xaxis=None, values=None, count=False,
                font_scale=1.5, smooth=1, select=None, exclude=None, estimator='mean'):
     data = get_all_datasets(all_logdirs, legend, select, exclude)
     values = values if isinstance(values, list) else [values]
@@ -225,9 +233,10 @@ def main():
 
     """
 
-    make_plots(args.logdir, args.legend, args.xaxis, args.value, args.count, 
+    make_plots(args.logdir, args.legend, args.xaxis, args.value, args.count,
                smooth=args.smooth, select=args.select, exclude=args.exclude,
                estimator=args.est)
+
 
 if __name__ == "__main__":
     main()
