@@ -1,0 +1,46 @@
+{
+    "ac_kwargs":	{},
+    "actor_critic":	"MLPActorCritic2Heads",
+    "alpha_std_est":	0.05,
+    "clip_ratio":	0.2,
+    "env_fn":	"<function call_experiment.<locals>.thunk_plus.<locals>.<lambda> at 0x7fd5520f4378>",
+    "epochs":	500,
+    "epochs_rnd_warmup":	1,
+    "exp_name":	"rnd_scale=1000_no_norm",
+    "gamma":	0.99,
+    "lam":	0.97,
+    "logger":	{
+        "<spinup.utils.logx.EpochLogger object at 0x7fd551fc6240>":	{
+            "epoch_dict":	{},
+            "exp_name":	"rnd_scale=1000_no_norm",
+            "first_row":	true,
+            "log_current_row":	{},
+            "log_headers":	[],
+            "output_dir":	"/home/mamat/Desktop/Study/RL/spinningup_curiousity/data/rnd_scale=1000_no_norm/rnd_scale=1000_no_norm_s20",
+            "output_file":	{
+                "<_io.TextIOWrapper name='/home/mamat/Desktop/Study/RL/spinningup_curiousity/data/rnd_scale=1000_no_norm/rnd_scale=1000_no_norm_s20/progress.txt' mode='w' encoding='UTF-8'>":	{
+                    "mode":	"w"
+                }
+            }
+        }
+    },
+    "logger_kwargs":	{
+        "exp_name":	"rnd_scale=1000_no_norm",
+        "output_dir":	"/home/mamat/Desktop/Study/RL/spinningup_curiousity/data/rnd_scale=1000_no_norm/rnd_scale=1000_no_norm_s20"
+    },
+    "max_ep_len":	200,
+    "norm_intr":	false,
+    "only_intr":	false,
+    "pi_lr":	0.0003,
+    "rnd_lr":	0.001,
+    "save_freq":	10,
+    "scale_reward":	1000,
+    "seed":	20,
+    "single_head":	false,
+    "steps_per_epoch":	4000,
+    "target_kl":	0.01,
+    "train_pi_iters":	80,
+    "train_rnd_iters":	80,
+    "train_v_iters":	80,
+    "vf_lr":	0.001
+}
