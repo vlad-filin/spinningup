@@ -1,0 +1,59 @@
+{
+    "ac_kwargs":	{},
+    "clip_ratio":	0.2,
+    "env_fn":	"<function call_experiment.<locals>.thunk_plus.<locals>.<lambda> at 0x7f241d3d7510>",
+    "epochs":	500,
+    "epochs_warmup":	1,
+    "exp_name":	"ExpName",
+    "gamma":	0.99,
+    "intr_rew_lr":	0.0005,
+    "intr_rew_model":	"ICM",
+    "intr_rew_model_kwargs":	{
+        "activation_DM":	"Tanh",
+        "activation_encoder":	"Tanh",
+        "encoder_output_size":	8,
+        "hidden_sizes_DM":	[
+            64,
+            64
+        ],
+        "hidden_sizes_encoder":	[
+            16,
+            16
+        ]
+    },
+    "lam":	0.97,
+    "logger":	{
+        "<spinup.utils.logx.EpochLogger object at 0x7f241d22de80>":	{
+            "epoch_dict":	{},
+            "exp_name":	"ExpName",
+            "first_row":	true,
+            "log_current_row":	{},
+            "log_headers":	[],
+            "output_dir":	"/home/vlad/hdd/MMP MSU/5 course/AdvancedRL/spinningup/data/ExpName/ExpName_s0",
+            "output_file":	{
+                "<_io.TextIOWrapper name='/home/vlad/hdd/MMP MSU/5 course/AdvancedRL/spinningup/data/ExpName/ExpName_s0/progress.txt' mode='w' encoding='UTF-8'>":	{
+                    "mode":	"w"
+                }
+            }
+        }
+    },
+    "logger_kwargs":	{
+        "exp_name":	"ExpName",
+        "output_dir":	"/home/vlad/hdd/MMP MSU/5 course/AdvancedRL/spinningup/data/ExpName/ExpName_s0"
+    },
+    "max_ep_len":	1000,
+    "normalize_rewards":	true,
+    "only_intrinsic":	false,
+    "pi_lr":	0.0003,
+    "save_freq":	10,
+    "scaling_factor":	10000,
+    "seed":	0,
+    "steps_per_epoch":	4000,
+    "sticky_actions_prob":	0,
+    "target_kl":	0.01,
+    "train_intr_rew_iters":	80,
+    "train_pi_iters":	80,
+    "train_v_iters":	80,
+    "two_v_heads":	true,
+    "vf_lr":	0.001
+}

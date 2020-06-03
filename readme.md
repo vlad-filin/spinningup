@@ -39,5 +39,10 @@ RND:
 python -m spinup.run test_policy data/rnd_scale\=1000_no_norm/rnd_scale\=1000_no_norm_s0/
 ```
 
+ICM:
+```
+python -m spinup.run test_policy data/icm_best_0
+```
+
 
 P.S. в текущий версии модели внутренней мотивации работают только с ppo и средой MountainCar-v0
